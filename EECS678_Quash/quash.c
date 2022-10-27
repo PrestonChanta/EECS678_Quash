@@ -69,7 +69,6 @@ void doPWD(){
 
 //Impements the change directory command
 void changeDir(){
-    findPath();
     if( argv[1] == NULL ){
         chdir( getenv( "HOME" ) );
     } else {
