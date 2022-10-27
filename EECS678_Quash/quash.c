@@ -23,7 +23,6 @@ static char* argv[15];
 static int argc = 0;
 int buffer_char = 0;
 char buffer[100];
-char* curr_dir;
 
 /******************************************************************************************************/
 //Basic functions
@@ -50,21 +49,28 @@ void clear_sky(){
 void doEcho(){
     //Prints out current path working directory
     if( argv[ 1 ] == getenv( "PWD" ) ){
-        printf( "%s\n", curr_dir );
+        printf( "%s\n", "a" );
     }
     //TO DO add remaining echo functionality
 }
 
 //Implements export command
 void doExport(){
-    
+    char* temp;
+    temp = argv[1];
+    for( int i = 0; i < strlen( argv[ 1 ] ); i ++ ){
+        if( argv[ 1 ][ i ] == '=' ){
+            temp[ i ] = '\0';
+            setenv( temp, argv[ 1 ] + i + 1, 1);
+        }
+    }
 }
 
 //Implements pwd commmand
 void doPWD(){
-    if( strcmp( "pwd", argv[0] ) == 0 ){
-        printf( "%s\n", curr_dir );
-    }
+    char cwd[512];
+    getcwd(cwd, sizeof(cwd));
+    printf("%s\n", cwd );
 }
 
 //Impements the change directory command
@@ -76,7 +82,6 @@ void changeDir(){
             printf( "%s: No such directory\n", argv[1]);
         }
     }
-    curr_dir = getenv( "PWD" );
 }
 
 /******************************************************************************************************/
@@ -101,22 +106,15 @@ void createJob(){
 
 //Replaces any found $PATH found with the corresponding path directory
 void findPath(){
-    char* str;
-    char* token;
+    char* temp;
     int len = 0;
     for( int i = 0; i < argc; i ++ ){
-        str = argv[i];
-        len = strlen( str );
-        token = strtok( str, "$" );
+        temp = argv[ i ];
+        len = strlen( argv[ i ] );
         for( int j = 0; j < len; j ++ ){
-            if( getenv( str + j ) ){
-                str = token;
-                if( getenv( str ) ){ 
-                    argv[ i ] = getenv( argv[i] + j );
-                } else {
-                    strcat( str , getenv( argv[i] + j ) );
-                    argv[ i ] = str;
-                }
+            if( argv[ i ][ j ] == '$' && getenv( argv[ i ] + j + 1)){
+                temp[ j ] = '\0';
+                strcat( temp, getenv( argv[ i ] + j + 1) );
             }
         }
     }
@@ -126,8 +124,8 @@ void findPath(){
 int parseCommand(){ 
     findPath();
     //Does the echo command
-    /*if( strcmp( "echo", argv[0] ) == 0 ){
-        doEcho();
+    /*if( strcmp( "test", argv[0] ) == 0 ){
+        //doEcho();
         return( 1 );
     }*/
     //Does the pwd commands
@@ -171,7 +169,7 @@ void readLine(){
 
 //Determines whether to exit, do built-in commands, or create a new job(process)
 void doCmd(){
-    //The mulitple ways of exiting quash
+    //How to exit quashs
     if(strcmp("exit",argv[0]) ==  0 || strcmp("quit",argv[0]) ==  0){
         exit(3);
     //If it isn't a built-in command it creates a job
@@ -194,7 +192,6 @@ int main(){
     parent_pgid = getpgrp();
     terminal = STDIN_FILENO;
     is_interactive = isatty(terminal);
-    curr_dir = getenv( "PWD" );
 
     //Moved the large chunk of commented code below
 
