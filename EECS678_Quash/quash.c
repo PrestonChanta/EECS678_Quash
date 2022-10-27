@@ -45,12 +45,14 @@ void clear_sky(){
     }
 }
 
+//TO DO: The echo command has a lot of functionality based on parsing
+//it needs to 
+//1: print strings/path variables
+//2: remove single or double quotes (on the ends of each arg)
+//3: recognize comments with #
+
 //Implements echo commmand
 void doEcho(){
-    //Prints out current path working directory
-    if( argv[ 1 ] == getenv( "PWD" ) ){
-        printf( "%s\n", "a" );
-    }
     //TO DO add remaining echo functionality
 }
 
@@ -123,7 +125,8 @@ void findPath(){
 //Parses the command given in argv
 int parseCommand(){ 
     findPath();
-    //Does the echo command
+    //TO DO: Fix the echo command so this can be uncommented
+    //Does the echo command 
     /*if( strcmp( "test", argv[0] ) == 0 ){
         //doEcho();
         return( 1 );
