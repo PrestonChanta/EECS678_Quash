@@ -209,62 +209,6 @@ void readLine(){
     }
 }
 
-// runs cmd in background
-void runBackground(){
-    pid_t pid = fork();
-    background = 0;
-    jobs++;
-    int currJob = jobs;
-    int didCmd = 1;
-    int tmpLen = argc;
-    const char *tmp[15];
-    char cwd[512];
-    
-    if( pid == 0 ){
-        
-        //print that the process started
-        printf("\33[2K\r");
-        printf("Background job started: [%d] %d ", currJob, getpid());
-        for(int i=0; i < tmpLen; i++){
-            tmp[i] = argv[i];
-            printf("%s ", tmp[i]);
-        }
-        printf("\n");
-
-        signal(SIGINT, SIG_IGN);
-
-        setenv( "parent", getcwd(cwd,sizeof(cwd)), 1);
-        
-        // get cmd
-        printQuash();
-        while(didCmd){
-            input = getchar();
-            if(input == '\n'){
-                printQuash();
-            }
-            else{
-                readLine();
-                break;
-            }
-        }
-        if( parseCommand() == 0 ){
-            execArgs();
-        }
-        
-        // print that process is complete
-        printf("Completed: [%d] %d ", currJob, getpid());
-        for(int i=0; i < tmpLen; i++){
-            printf("%s ", tmp[i]);
-        }
-        printf("\n");
-        jobs--;
-    }
-    else{
-        wait(NULL);
-        exit( 0 );
-    }
-}
-
 //Determines whether to exit, do built-in commands, or create a new job(process)
 void doCmd(){
     //How to exit quashs
@@ -277,7 +221,59 @@ void doCmd(){
         execArgs();
     }
     if( background == 1 ){
-        runBackground();
+        pid_t pid = fork();
+        background = 0;
+        jobs++;
+        int currJob = jobs;
+        int didCmd = 1;
+        int tmpLen = argc;
+        const char *tmp[15];
+        char cwd[512];
+        
+        if( pid == 0 ){
+            
+            
+            //print that the process started
+            printf("\33[2K\r");
+            printf("Background job started: [%d] %d ", currJob, getpid());
+            for(int i=0; i < tmpLen; i++){
+                tmp[i] = argv[i];
+                printf("%s ", tmp[i]);
+            }
+            printf("\n");
+
+            signal(SIGINT, SIG_IGN);
+
+            setenv( "parent", getcwd(cwd,sizeof(cwd)), 1);
+            
+            // get cmd
+            printQuash();
+            while(didCmd){
+                input = getchar();
+                if(input == '\n'){
+                    printQuash();
+                }
+                else{
+                    readLine();
+                    break;
+                }
+            }
+            if( parseCommand() == 0 ){
+                execArgs();
+            }
+
+            // print that process is complete
+            printf("Completed: [%d] %d ", currJob, getpid());
+            for(int i=0; i < tmpLen; i++){
+                printf("%s ", tmp[i]);
+            }
+            printf("\n");
+            jobs--;
+        }
+        else{
+            wait(NULL);
+            exit( 0 );
+        }
     }
 }
 
