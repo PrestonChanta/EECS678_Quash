@@ -23,6 +23,8 @@ static char* argv[15];
 static int argc = 0;
 int buffer_char = 0;
 char buffer[100];
+int background = 0;
+int jobs = 0;
 
 /******************************************************************************************************/
 //Basic functions
@@ -44,7 +46,6 @@ void clear_sky(){
         }
     }
 }
-
 //TO DO: The echo command has a lot of functionality based on parsing
 //it needs to 
 //1: print strings/path variables
@@ -116,14 +117,26 @@ void execArgs(){
     if(pid == 0){
         setpgrp();
         if ( execvp( *argv, argv ) == -1 ){
-        perror(" ");
-        exit(0);
+            perror(" ");
+            exit(0);
         }
     } else {
         wait(NULL);
     }
 }
-
+// checks for IO redirection and background or foreground execution
+int checkForGroundAndRedirection()
+{
+    background = 0;
+    int i = 0;
+    while( argv[ i ] != NULL && background == 0 ){
+        if( strcmp( "&", argv[i] ) == 0 ){
+            background = 1;
+        }
+        i++;
+    }
+    return( 1 );
+}
 /******************************************************************************************************/
 //Parser functions, determine what to do based on inputs
 
@@ -168,6 +181,10 @@ int parseCommand(){
         changeDir();
         return( 1 );
     }
+        // Comment command so it does nothing
+    if( strcmp( "#", argv[0] ) == 0 ){
+        return( 1 );
+    }
     return( 0 );
 }
 
@@ -192,6 +209,62 @@ void readLine(){
     }
 }
 
+// runs cmd in background
+void runBackground(){
+    pid_t pid = fork();
+    background = 0;
+    jobs++;
+    int currJob = jobs;
+    int didCmd = 1;
+    int tmpLen = argc;
+    const char *tmp[15];
+    char cwd[512];
+    
+    if( pid == 0 ){
+        
+        //print that the process started
+        printf("\33[2K\r");
+        printf("Background job started: [%d] %d ", currJob, getpid());
+        for(int i=0; i < tmpLen; i++){
+            tmp[i] = argv[i];
+            printf("%s ", tmp[i]);
+        }
+        printf("\n");
+
+        signal(SIGINT, SIG_IGN);
+
+        setenv( "parent", getcwd(cwd,sizeof(cwd)), 1);
+        
+        // get cmd
+        printQuash();
+        while(didCmd){
+            input = getchar();
+            if(input == '\n'){
+                printQuash();
+            }
+            else{
+                readLine();
+                break;
+            }
+        }
+        if( parseCommand() == 0 ){
+            execArgs();
+        }
+        
+        // print that process is complete
+        printf("Completed: [%d] %d ", currJob, getpid());
+        for(int i=0; i < tmpLen; i++){
+            printf("%s ", tmp[i]);
+        }
+        printf("\n");
+        jobs--;
+    }
+    else{
+        wait(NULL);
+        exit( 0 );
+    }
+}
+
 //Determines whether to exit, do built-in commands, or create a new job(process)
 void doCmd(){
     //How to exit quashs
@@ -199,9 +272,13 @@ void doCmd(){
         exit(3);
     //If it isn't a built-in command it creates a job
     } 
-    if( parseCommand() == 0 ) {
+    checkForGroundAndRedirection();
+    if( parseCommand() == 0 && background == 0 ){
         execArgs();
-    } 
+    }
+    if( background == 1 ){
+        runBackground();
+    }
 }
 
 /******************************************************************************************************/
@@ -214,10 +291,10 @@ int main(){
     printf("Welcome...\n");
 
     //Set some variables
-    parent_pid = getpid();
-    parent_pgid = getpgrp();
-    terminal = STDIN_FILENO;
-    is_interactive = isatty(terminal);
+    // parent_pid = getpid();
+    // parent_pgid = getpgrp();
+    // terminal = STDIN_FILENO;
+    // is_interactive = isatty(terminal);
 
     //Moved the large chunk of commented code below
 
@@ -244,14 +321,12 @@ int main(){
     {
         while(tcgetpgrp(terminal) != (parent_pgid))
             kill(parent_pid,SIGTTIN);
-
         signal(SIGQUIT, SIG_IGN);
         signal(SIGTTOU, SIG_IGN);
         signal(SIGTTIN, SIG_IGN);
         signal(SIGTSTP, SIG_IGN);
         signal(SIGINT, SIG_IGN);
         signal(SIGCHLD, &signalHandler_child);
-
         setpgid(parent_pid,parent_pid);
         parent_pgid = getpgrp();
         
