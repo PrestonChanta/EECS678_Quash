@@ -54,6 +54,27 @@ void clear_sky(){
 //Implements echo commmand
 void doEcho(){
     //TO DO add remaining echo functionality
+    for( int i = 1; i < argc; i ++ ){
+        if( strcmp( "#", argv[ i ] ) == 0 ){
+            break;
+        }
+        if( strcmp( "\"", argv[ i ] ) == 0 || 
+            strcmp( "\"", argv[ i ] ) == 0 ){
+            argv[ i ] = "\0";
+        }
+        if( argv[ i ][ 0 ] == '\'' || 
+            argv[ i ][ 0 ] == '"' ){
+            argv[ i ] = argv[ i ] + 1;
+        }
+        if( argv[ i ][ strlen( argv[ i ] ) - 1 ] == '\'' || 
+            argv[ i ][ strlen( argv[ i ] ) - 1 ] == '"' ){
+            argv[ i ][ strlen( argv[ i ] ) - 1 ] = '\0';
+        }
+        if( strlen( argv[ i ] ) != 0 ){
+            printf( "%s ", argv[ i ] );
+        }
+    }
+    printf("\n");
 }
 
 //Implements export command
@@ -89,7 +110,7 @@ void changeDir(){
 /******************************************************************************************************/
 
 //Creates a job (another procees)
-void createJob(){
+void execArgs(){
     pid_t pid;
     pid = fork();
     if(pid == 0){
@@ -114,9 +135,10 @@ void findPath(){
         temp = argv[ i ];
         len = strlen( argv[ i ] );
         for( int j = 0; j < len; j ++ ){
-            if( argv[ i ][ j ] == '$' && getenv( argv[ i ] + j + 1)){
+            if( argv[ i ][ j ] == '$' && getenv( argv[ i ] + j + 1) ){
                 temp[ j ] = '\0';
                 strcat( temp, getenv( argv[ i ] + j + 1) );
+                argv[ i ] = temp;
             }
         }
     }
@@ -127,10 +149,10 @@ int parseCommand(){
     findPath();
     //TO DO: Fix the echo command so this can be uncommented
     //Does the echo command 
-    /*if( strcmp( "test", argv[0] ) == 0 ){
-        //doEcho();
+    if( strcmp( "echo", argv[0] ) == 0 ){
+        doEcho();
         return( 1 );
-    }*/
+    }
     //Does the pwd commands
     if( strcmp( "pwd", argv[0] ) == 0 ){
         doPWD();
@@ -178,8 +200,8 @@ void doCmd(){
     //If it isn't a built-in command it creates a job
     } 
     if( parseCommand() == 0 ) {
-        createJob();
-    }
+        execArgs();
+    } 
 }
 
 /******************************************************************************************************/
@@ -189,6 +211,7 @@ int main(){
     //Creates a process to empty terminal
     clear_sky();
     wait(NULL);
+    printf("Welcome...\n");
 
     //Set some variables
     parent_pid = getpid();
