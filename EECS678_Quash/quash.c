@@ -142,24 +142,91 @@ int checkForGroundAndRedirection()
 
 //Replaces any found $PATH found with the corresponding path directory
 void findPath(){
+    const int size = 1024;
     char* temp;
+    char buf[ size ];
+    char path[ size ];
+    char result[ size ];
+    int counter = 0;
     int len = 0;
+    int exit;
+    int replacer = 0;
+    int resetter = 0;
+    int pathname = 0;
+    int j = 0;
+
     for( int i = 0; i < argc; i ++ ){
-        temp = argv[ i ];
+        counter = 0;
+        replacer = 0;
+        resetter = 0;
+        pathname = 0;
+        j = 0;
         len = strlen( argv[ i ] );
         for( int j = 0; j < len; j ++ ){
-            if( argv[ i ][ j ] == '$' && getenv( argv[ i ] + j + 1) ){
-                temp[ j ] = '\0';
-                strcat( temp, getenv( argv[ i ] + j + 1) );
-                argv[ i ] = temp;
+            if( argv[ i ][ j ] == '/' ){
+                argv[ i ][ j ] = '\0';
             }
+            buf[ j ] = argv[ i ][ j ];
+            counter = counter + 1;
+        }
+        buf[ counter ] = '\0';
+        buf[ counter + 1 ] = '\0';
+        while( resetter != 2 ){
+            result[ j + replacer ] = buf[ j + pathname ];
+            if( buf[ j ] == '$' ){
+                if( getenv( buf + j + 1 ) ){
+                    temp = getenv( buf + j + 1 );
+                    counter = 0;
+                    pathname = strlen( buf + j + 1 ) + 1 + pathname;
+                    for( int k = 0; k < strlen( temp ); k ++ ){
+                        path[ k ] = temp[ k ];
+                        counter = counter + 1;
+                    }
+                    path[ counter ] = '\0';
+                    for( int l = 0; l < strlen( path ); l ++ ){
+                        result[ j + l + replacer ] = path[ l ];
+                    }
+                    replacer = replacer + strlen( path ) + 1;
+                    result[ j + replacer ] = '/';
+                }
+            }
+            if( buf[ j ] == '\0' && buf[ j + 1 ] != '\0' ){
+                result[ j + replacer ] = '/';
+            }
+            if( buf[ j ] == '\0' && buf[ j + 1 ] == '\0' ){
+                resetter = 2;
+            }
+            j = j + 1;
+        }
+        strcpy( argv[ i ], result );
+    }
+}
+
+//Removes all comments
+int removeComments(){
+    int comments = 0;
+    if( argv[ 0 ][ 0 ] == '#' ){
+            argv[ 0 ] = "#";
+            return( 1 );
+    }
+    for( int i = 0; i < argc; i ++ ){
+        if( argv[ i ] == "#" || argv[ i ][ 0 ] == '#' ){
+            comments = 1;
+        }
+        if( comments == 1 ){
+            argv[ i ] = "\0";
+        }
+        if( argv[ 0 ][ 0 ] == '#' ){
+            argv[ 0 ] = "#";
         }
     }
+    return ( 1 );
 }
 
 //Parses the command given in argv
 int parseCommand(){ 
     findPath();
+    removeComments();
     //TO DO: Fix the echo command so this can be uncommented
     //Does the echo command 
     if( strcmp( "echo", argv[0] ) == 0 ){
