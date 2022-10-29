@@ -359,9 +359,9 @@ struct job* delJob( struct job* given ){
     curr = curr_jobs->next;
     prev = curr_jobs;
     if( prev->pid == given->pid ){
-        prev = prev->next;
+        prev = NULL;
         active_jobs = active_jobs - 1;
-        return curr;
+        return prev;
     }
     while( curr != NULL ){
         if( curr->pid == given->pid ){
@@ -388,23 +388,12 @@ struct job* getJob( int given ){
     return( NULL );
 }
 
-void jobFore( struct job* given ){
-    given->ground = 1;
-    if( given == NULL ){
-        return;
-    }
-    wait( NULL );
-    tcsetpgrp( q_term, q_pgid );
-}
-
 void jobBack( struct job* given ){
     given->ground = 0;
     tcsetpgrp( q_term, q_pgid );
 }
 
 void jobHandler(){
-    while ( waitpid(-1, NULL, WNOHANG ) > 0 ){
-    }
     pid_t pid;
     int status;
     pid = waitpid( pid, &status, WNOHANG | WUNTRACED );
@@ -451,14 +440,12 @@ void doJob(){
             //Do writing
             printf( "writefound\n" );
         }
+        printf( "\nin child\n" );
         execArgs();
         exit( 0 );
     } else {
-        setpgid( pid, pid );
-
         if( job_type == 0 ){
             wait( NULL );
-            
         } else {
             
         }
