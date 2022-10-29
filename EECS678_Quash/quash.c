@@ -108,6 +108,49 @@ void changeDir(){
     }
 }
 
+//Create a pipe between the given commands
+void doPipe(){
+    int counter = 0;
+    for( int i = 0; i < argc; i ++ ){
+        if( argv[ i ] == "|" ){
+            counter++;
+            break;
+        }
+        counter++;
+    }
+    char* first[ counter ];
+    char* second[ argc - counter - 1 ];
+    for( int i = 0; i < counter; i ++ ){
+        first[ i ] = argv[ i ];
+    }
+    int increment = 0;
+    for( int i = argc - 1; i > argc - 1; i -- ){
+        second[ increment ] = argv[ i ];
+        increment ++; 
+    }
+    int fds[ 2 ];
+    pipe( fds );
+    int pid;
+    pid = fork();
+    if( pid == 0 ){
+        dup2( fds[ 1 ], STDOUT_FILENO );
+        close( fds[ 0 ]);
+        close( fds[ 1 ]); 
+        if( execvp( *first, first ) ){
+            perror( " " );
+        }
+        exit( 0 );
+    } else {
+        dup2( fds[ 0 ], STDIN_FILENO );
+        close( fds[ 0 ] );
+        close( fds[ 1 ] );
+        wait( NULL );
+        if( execvp( *second, second ) == -1 ){
+            perror( " " );
+        }
+    }
+}
+
 /******************************************************************************************************/
 
 //Creates a job (another procees)
@@ -298,7 +341,11 @@ void doCmd(){
         char cwd[512];
         
         if( pid == 0 ){
-            
+
+            if( detectPipe() ){
+                doPipe();
+                exit( 0 );
+            }
             
             //print that the process started
             printf("\33[2K\r");
