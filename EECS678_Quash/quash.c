@@ -1,63 +1,132 @@
-//TO DO, add authors and stuff.
+// TODO *Include authors, brief etc.
 
-/******************************************************************************************************/
-//Initialize libraries and some variables
+/**********************************************************************************/
+/**********************************************************************************/
+//Libraries, Definitions, and variables
 
 //Libraries
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <errno.h>
+#include <sys/types.h>
+#include <signal.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 #include <termios.h>
 
-//Global Variables
-pid_t parent_pid;
-pid_t parent_pgid;
-int terminal = STDIN_FILENO;
-int is_interactive;
-static struct termios parent_tmodes;
-char input; 
-static char* argv[15];
-static int argc = 0;
-int buffer_char = 0;
-char buffer[100];
-int background = 0;
-int jobs = 0;
+//Basic Definitions
+#define ZERO 0 
+#define TRUE 1
+#define FALSE 0
+#define bufMax 512
+#define argMax 16
 
-/******************************************************************************************************/
-//Basic functions
-//This includes QOL and some built-in commands to Quash
+//Command line related variables
+static char cmd_buf[ bufMax ];
+char name_buf[ bufMax ];
+static char* argv[ argMax ];
+static char new_in = '\0';
+static int argc = ZERO;
+static int pos = ZERO;
+int buf_char = ZERO;
 
-//Simply print out the quash terminal
-void printQuash()
-{
-    printf("[QUASH]$ ");
+//Quash process id's
+static pid_t q_pid;
+static pid_t q_pgid;
+static struct termios q_tmode;
+static int q_term;
+
+//Job counter
+static int active_jobs = ZERO;
+
+/**********************************************************************************/
+/**********************************************************************************/
+//Classes, definitions, and more variables
+
+struct job{
+    int id;
+    char* command;
+    pid_t pid;
+    pid_t pgid;
+    int ground;
+    struct job* next;
+};
+
+static struct job* curr_jobs = NULL;
+
+/**********************************************************************************/
+/**********************************************************************************/
+//Basic Functions
+
+//Simply prints out bash line
+void printQuash(){
+    printf("[QUASH]$ " );
 }
 
-//Creates a process to clear out terminal
+//Cleans up terminal
 void clear_sky(){
-    pid_t status = fork();
-    if( status == 0 ){
-        if( execvp( "clear", (char* const[]){"clear", NULL} ) == -1 ){
-        printf( "error" );
-        exit(0);
+    pid_t temp = fork();
+    if( temp == 0 ){
+        if( execvp( "clear", ( char* const[] ){ "clear", NULL } ) == -1 ){
+            printf( " " );
+            exit( 0 );
         }
     }
 }
-//TO DO: The echo command has a lot of functionality based on parsing
-//it needs to 
-//1: print strings/path variables
-//2: remove single or double quotes (on the ends of each arg)
-//3: recognize comments with #
 
-//Implements echo commmand
+//Simply takes the command line and puts them
+//into the argv and argc variables
+void readLine(){
+    while( argc != 0 ){
+        argv[ argc ] = NULL;
+        argc = argc - 1;
+    }
+    buf_char = 0;
+    char *buf;
+    while( new_in != '\n' ){
+        cmd_buf[ buf_char++ ] = new_in;
+        new_in = getchar();
+    }
+    cmd_buf[ buf_char ] = 0x00;
+    buf = strtok( cmd_buf, " " );
+    while( buf != NULL ){
+        argv[ argc ] = buf;
+        buf = strtok( NULL, " " );
+        argc = argc + 1;
+    }
+}
+
+void execArgs(){
+    if( execvp( *argv, argv ) ){
+        perror( " ERR\n" );
+    }
+    exit( 0 );
+}
+
+void printJobs(){
+    struct job* temp = curr_jobs;
+    if( temp == NULL ){
+    } else {
+        while( temp != NULL ){
+            printf( "[%d]    %d    %s\n", temp->id, temp->pid, temp->command);
+            temp = temp->next;
+        }
+    }
+}
+
+/**********************************************************************************/
+/**********************************************************************************/
+//Built-in command functions
+
+//
 void doEcho(){
-    //TO DO add remaining echo functionality
     for( int i = 1; i < argc; i ++ ){
         if( strcmp( "#", argv[ i ] ) == 0 ){
             break;
+        }
+        if( argv[ i ][ 0 ] == '$' ){
+            argv[ i ] = "\0";
         }
         if( strcmp( "\"", argv[ i ] ) == 0 || 
             strcmp( "\"", argv[ i ] ) == 0 ){
@@ -78,114 +147,48 @@ void doEcho(){
     printf("\n");
 }
 
-//Implements export command
+//Simply finds the current path, and prints it
+void doPWD(){
+    char cwd[ 512 ];
+    getcwd( cwd, sizeof( cwd ) );
+    printf( "%s\n", cwd );
+}
+
+//Finds the given path, and sets it to
+//the new one.
 void doExport(){
     char* temp;
-    temp = argv[1];
     for( int i = 0; i < strlen( argv[ 1 ] ); i ++ ){
         if( argv[ 1 ][ i ] == '=' ){
-            temp[ i ] = '\0';
-            setenv( temp, argv[ 1 ] + i + 1, 1);
+            argv[ 1 ][ i ] = '\0';
+            temp = argv[ 1 ] + i + 1;
+            setenv( argv[ 1 ], temp, 1);
         }
     }
 }
 
-//Implements pwd commmand
-void doPWD(){
-    char cwd[512];
-    getcwd(cwd, sizeof(cwd));
-    printf("%s\n", cwd );
-}
-
-//Impements the change directory command
-void changeDir(){
-    if( argv[1] == NULL ){
+//Finds the given directory( if given )
+//and uses chdir to go to it
+void doCD(){
+    if( argv[ 1 ] == NULL ){
         chdir( getenv( "HOME" ) );
     } else {
-        if( chdir( argv[1] ) == -1  ){
+        if( chdir( argv[ 1 ] ) == -1  ){
             printf( "%s: No such directory\n", argv[1]);
         }
     }
 }
 
-//Create a pipe between the given commands
-void doPipe(){
-    int counter = 0;
-    for( int i = 0; i < argc; i ++ ){
-        if( argv[ i ] == "|" ){
-            counter++;
-            break;
-        }
-        counter++;
-    }
-    char* first[ counter ];
-    char* second[ argc - counter - 1 ];
-    for( int i = 0; i < counter; i ++ ){
-        first[ i ] = argv[ i ];
-    }
-    int increment = 0;
-    for( int i = argc - 1; i > argc - 1; i -- ){
-        second[ increment ] = argv[ i ];
-        increment ++; 
-    }
-    int fds[ 2 ];
-    pipe( fds );
-    int pid;
-    pid = fork();
-    if( pid == 0 ){
-        dup2( fds[ 1 ], STDOUT_FILENO );
-        close( fds[ 0 ]);
-        close( fds[ 1 ]); 
-        if( execvp( *first, first ) ){
-            perror( " " );
-        }
-        exit( 0 );
-    } else {
-        dup2( fds[ 0 ], STDIN_FILENO );
-        close( fds[ 0 ] );
-        close( fds[ 1 ] );
-        wait( NULL );
-        if( execvp( *second, second ) == -1 ){
-            perror( " " );
-        }
-    }
-}
+/**********************************************************************************/
+/**********************************************************************************/
+//Parsers
 
-/******************************************************************************************************/
-
-//Creates a job (another procees)
-void execArgs(){
-    pid_t pid;
-    pid = fork();
-    if(pid == 0){
-        setpgrp();
-        if ( execvp( *argv, argv ) == -1 ){
-            perror(" ");
-            exit(0);
-        }
-    } else {
-        wait(NULL);
-    }
-}
-// checks for IO redirection and background or foreground execution
-int checkForGroundAndRedirection()
-{
-    background = 0;
-    int i = 0;
-    while( argv[ i ] != NULL && background == 0 ){
-        if( strcmp( "&", argv[i] ) == 0 ){
-            background = 1;
-        }
-        i++;
-    }
-    return( 1 );
-}
-/******************************************************************************************************/
-//Parser functions, determine what to do based on inputs
-
-//Replaces any found $PATH found with the corresponding path directory
-void findPath(){
-    const int size = 1024;
+//Converts all found $___ types to the according 
+//path if it was found
+//*NOTE doesn't work for $____$____
+//*it will only convert the last one
+void convertPaths(){
+    const int size = 512;
     char* temp;
     char buf[ size ];
     char path[ size ];
@@ -199,6 +202,9 @@ void findPath(){
     int j = 0;
 
     for( int i = 0; i < argc; i ++ ){
+        memset( &buf[ 0 ], 0, size );
+        memset( &path[ 0 ], 0, size );
+        memset( &result[ 0 ], 0, size );
         counter = 0;
         replacer = 0;
         resetter = 0;
@@ -206,7 +212,7 @@ void findPath(){
         j = 0;
         len = strlen( argv[ i ] );
         for( int j = 0; j < len; j ++ ){
-            if( argv[ i ][ j ] == '/' ){
+                        if( argv[ i ][ j ] == '/' ){
                 argv[ i ][ j ] = '\0';
             }
             buf[ j ] = argv[ i ][ j ];
@@ -245,8 +251,9 @@ void findPath(){
     }
 }
 
-//Removes all comments
-int removeComments(){
+//Converts anything found after a # symbol
+//Into nothing as it is a comment, and shouldn't be read
+int convertComments(){
     int comments = 0;
     if( argv[ 0 ][ 0 ] == '#' ){
             argv[ 0 ] = "#";
@@ -266,182 +273,258 @@ int removeComments(){
     return ( 1 );
 }
 
-//Parses the command given in argv
-int parseCommand(){ 
-    findPath();
-    removeComments();
-    //TO DO: Fix the echo command so this can be uncommented
-    //Does the echo command 
-    if( strcmp( "echo", argv[0] ) == 0 ){
+int isSymbolFound( char* checker ){
+    pos = 0;
+    for( int i = 0; i < argc ; i ++ ){
+        if( strcmp( checker, argv[ i ] ) == 0 ){
+            argv[ i ] = NULL;
+            return( 1 );
+        }
+        pos = pos + 1;
+    }
+    return ( 0 );
+}
+
+//Parses through the built-in commands
+//and does the according command
+int parse_builtIn(){
+    convertPaths();
+    convertComments();
+    //Quits out of quash
+    if( strcmp( "exit", argv[ 0 ] ) == 0 ||
+        strcmp( "quit", argv[ 0 ] ) == 0 ){
+        exit( 0 );
+    }
+    if( strcmp( "#", argv [ 0 ] ) == 0 ){
+        return( 0 );
+    }
+    if( strcmp( "echo", argv[ 0 ] )  == 0 ){
         doEcho();
-        return( 1 );
+        return( 0 );
     }
-    //Does the pwd commands
-    if( strcmp( "pwd", argv[0] ) == 0 ){
+    if( strcmp( "pwd", argv[ 0 ] ) == 0 ){
         doPWD();
-        return( 1 );
+        return( 0 );
     }
-    //Does export commands
-    if( strcmp( "export", argv[0] ) == 0 ){
+    if( strcmp( "export", argv[ 0 ] ) == 0 ){
         doExport();
-        return( 1 );
+        return( 0 );
     }
-    //Change Directory command
-    if( strcmp( "cd", argv[0] ) == 0 ){
-        changeDir();
-        return( 1 );
+    if( strcmp( "cd", argv[ 0 ] ) == 0 ){
+        doCD();
+        return( 0 );
     }
-        // Comment command so it does nothing
-    if( strcmp( "#", argv[0] ) == 0 ){
-        return( 1 );
+    if( strcmp( "jobs", argv[ 0 ] ) == 0 ){
+        printJobs();
+        return( 0 );
     }
-    return( 0 );
+    return( 1 );
 }
 
-//Puts the line in argV
-void readLine(){
-    while(argc != 0){
-        argv[argc] = NULL;
-        argc--;
-    }
-    buffer_char = 0;
-    char *buff;
-    while(input != '\n'){
-        buffer[buffer_char++] = input;
-        input = getchar();
-    }
-    buffer[buffer_char] = 0x00;
-    buff = strtok(buffer, " ");
-    while(buff != NULL){
-        argv[argc] = buff;
-        buff = strtok(NULL, " ");
-        argc++;
+/**********************************************************************************/
+/**********************************************************************************/
+//Job related functions
+
+//Simply creates the new job and sets its variables
+//It then goes to add it to curr_jobs listclear
+struct job* addJob( pid_t pid, char* name){
+    struct job* newjob = malloc( sizeof( struct job ) );
+    newjob->command = ( char* ) malloc( sizeof( name ) );
+    newjob->command = strcpy( newjob->command, name );
+    newjob->pid = pid;
+    newjob->next = NULL;
+    if( curr_jobs == NULL ){
+        active_jobs = active_jobs + 1;
+        newjob->id = active_jobs;
+        return( newjob );
+    } else {
+        struct job* temp = curr_jobs;
+        while( temp->next != NULL ){
+            temp = temp->next;
+        }
+        newjob->id = temp->id + 1;
+        temp->next = newjob;
+        active_jobs = active_jobs + 1;
+        return( curr_jobs );
     }
 }
 
-//Determines whether to exit, do built-in commands, or create a new job(process)
-void doCmd(){
-    //How to exit quashs
-    if(strcmp("exit",argv[0]) ==  0 || strcmp("quit",argv[0]) ==  0){
-        exit(3);
-    //If it isn't a built-in command it creates a job
-    } 
-    checkForGroundAndRedirection();
-    if( parseCommand() == 0 && background == 0 ){
+//Deletes a job from the curr_jobs list
+struct job* delJob( struct job* given ){
+    if( curr_jobs == NULL ){
+        return( NULL );
+    }
+    struct job* curr;
+    struct job* prev;
+    curr = curr_jobs->next;
+    prev = curr_jobs;
+    if( prev->pid == given->pid ){
+        prev = prev->next;
+        active_jobs = active_jobs - 1;
+        return curr;
+    }
+    while( curr != NULL ){
+        if( curr->pid == given->pid ){
+            active_jobs = active_jobs - 1;
+            prev->next = curr->next;
+        }
+        prev = curr;
+        curr = curr->next;
+    }
+    return curr_jobs;
+}
+
+//Goes through the curr_jobs list and
+//finds whether the given process ID exists
+struct job* getJob( int given ){
+    struct job* finder = curr_jobs;
+    while( finder != NULL ){
+        if( finder->pid == given ){
+            return( finder );
+        } else {
+            finder = finder->next;
+        }
+    }
+    return( NULL );
+}
+
+void jobFore( struct job* given ){
+    given->ground = 1;
+    if( given == NULL ){
+        return;
+    }
+    wait( NULL );
+    tcsetpgrp( q_term, q_pgid );
+}
+
+void jobBack( struct job* given ){
+    given->ground = 0;
+    tcsetpgrp( q_term, q_pgid );
+}
+
+void jobHandler(){
+    while ( waitpid(-1, NULL, WNOHANG ) > 0 ){
+    }
+    pid_t pid;
+    int status;
+    pid = waitpid( pid, &status, WNOHANG | WUNTRACED );
+    if ( pid > 0 ){
+        struct job* temp = getJob( pid );
+        if( temp == NULL ){
+            return;
+        }
+        if( WIFEXITED( status ) ){
+            if( temp->ground == 1 ){
+                printf( "\nCompleted: [%d]    %d    %s\n", temp->id, temp->pid, temp->command );
+            }
+            printf( "EXITED\n");
+            curr_jobs = delJob( temp );
+        }
+        tcsetpgrp( q_term, q_pgid );
+    }
+}
+
+void doJob(){
+    pid_t pid;
+    int job_type = 0;
+    job_type = isSymbolFound( "&" );
+    pid = fork();
+
+    if( pid == 0 ){
+        signal(SIGINT, SIG_DFL);
+        signal(SIGQUIT, SIG_DFL);
+        signal(SIGTSTP, SIG_DFL);
+
+        signal(SIGCHLD, &jobHandler);
+
+        signal(SIGTTIN, SIG_DFL);
+        setpgrp();
+        if( isSymbolFound( "|" ) ){
+            //Do piping
+            printf( "pipefound\n" );
+        }
+        if( isSymbolFound( "<" ) ){
+            //Do reading
+            printf( "readfound\n" );
+        }
+        if( isSymbolFound( ">" ) ){
+            //Do writing
+            printf( "writefound\n" );
+        }
         execArgs();
-    }
-    if( background == 1 ){
-        pid_t pid = fork();
-        background = 0;
-        jobs++;
-        int currJob = jobs;
-        int didCmd = 1;
-        int tmpLen = argc;
-        const char *tmp[15];
-        char cwd[512];
-        
-        if( pid == 0 ){
+        exit( 0 );
+    } else {
+        setpgid( pid, pid );
 
-            if( detectPipe() ){
-                doPipe();
-                exit( 0 );
-            }
+        if( job_type == 0 ){
+            wait( NULL );
             
-            //print that the process started
-            printf("\33[2K\r");
-            printf("Background job started: [%d] %d ", currJob, getpid());
-            for(int i=0; i < tmpLen; i++){
-                tmp[i] = argv[i];
-                printf("%s ", tmp[i]);
-            }
-            printf("\n");
-
-            signal(SIGINT, SIG_IGN);
-
-            setenv( "parent", getcwd(cwd,sizeof(cwd)), 1);
+        } else {
             
-            // get cmd
-            printQuash();
-            while(didCmd){
-                input = getchar();
-                if(input == '\n'){
-                    printQuash();
-                }
-                else{
-                    readLine();
-                    break;
-                }
-            }
-            if( parseCommand() == 0 ){
-                execArgs();
-            }
-
-            // print that process is complete
-            printf("Completed: [%d] %d ", currJob, getpid());
-            for(int i=0; i < tmpLen; i++){
-                printf("%s ", tmp[i]);
-            }
-            printf("\n");
-            jobs--;
-        }
-        else{
-            wait(NULL);
-            exit( 0 );
         }
     }
 }
 
-/******************************************************************************************************/
-//Main, initializes some things and runs Quash
+/**********************************************************************************/
+/**********************************************************************************/
+//Initializer & Packagers( nesting multiple functions )
 
-int main(){
-    //Creates a process to empty terminal
-    clear_sky();
-    wait(NULL);
-    printf("Welcome...\n");
+//
+void initializeQuash(){
+    q_pid = getpid();
+    q_pgid = getpgrp();
+    q_term = STDIN_FILENO;
 
-    //Set some variables
-    // parent_pid = getpid();
-    // parent_pgid = getpgrp();
-    // terminal = STDIN_FILENO;
-    // is_interactive = isatty(terminal);
-
-    //Moved the large chunk of commented code below
-
-    //Runs Quash
+    if( isatty( q_term ) ){
+        while( tcgetpgrp( q_term ) != getpgrp() ){
+            kill( q_pid, SIGTTIN );
+            }
+        signal( SIGQUIT, SIG_IGN );
+        signal( SIGTTOU, SIG_IGN );
+        signal( SIGTTIN, SIG_IGN );
+        signal( SIGTSTP, SIG_IGN );
+        signal( SIGINT, SIG_IGN );
+        signal(SIGCHLD, &jobHandler );
+        setpgid( q_pid, q_pid );
+        q_pgid = getpgrp();
+        if( tcsetpgrp( q_term, q_pgid ) == -1 ){
+            tcgetattr( q_term, &q_tmode );
+        }
+    } else {
+        printf( "Quash was unable to initialize.\n Exiting...\n" );
+        exit( 0 );
+    }
     printQuash();
-    fflush(stdout);
-    while(1){
-        input = getchar();
-        if(input == '\n'){
+    fflush( stdout );
+}
+
+//Simply parses through built-ins
+//and if it isn't, it is presumed to be a job
+void doCmd(){
+        if( parse_builtIn() ){
+            doJob( argv );
+        }
+}
+
+/**********************************************************************************/
+/**********************************************************************************/
+//Main
+
+//
+int main(){
+    clear_sky();
+    wait( NULL );
+    printf( "Welcome...\n" );
+    initializeQuash();
+    while( TRUE ){
+        new_in = getchar();
+        if( new_in == '\n' ){
             printQuash();
+
         } else {
             readLine();
             doCmd();
             printQuash();
         }
     }
-    return 0;
 }
-
-/******************************************************************************************************/
-//Chunk of code
-/*
-    if(is_interactive)
-    {
-        while(tcgetpgrp(terminal) != (parent_pgid))
-            kill(parent_pid,SIGTTIN);
-        signal(SIGQUIT, SIG_IGN);
-        signal(SIGTTOU, SIG_IGN);
-        signal(SIGTTIN, SIG_IGN);
-        signal(SIGTSTP, SIG_IGN);
-        signal(SIGINT, SIG_IGN);
-        signal(SIGCHLD, &signalHandler_child);
-        setpgid(parent_pid,parent_pid);
-        parent_pgid = getpgrp();
-        
-        if(tcsetpgrp(terminal,parent_pgid) == -1)
-            tcgetattr(terminal,&parent_tmodes);
-        char* curr_dir = (char*)calloc(1024,sizeof(char));
-    }
-*/
