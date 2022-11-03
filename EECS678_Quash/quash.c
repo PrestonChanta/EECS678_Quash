@@ -323,8 +323,12 @@ void returnCommands( int givenPos ){
         count = count + 1;
         j = j + 1;
     }
-    first_command = buf1;
-    second_command = buf2;
+    for( int i = 0; i < argc; i ++ ){
+        first_command[ i ] = malloc( sizeof( buf1[ i ] ) );
+        second_command[ i ] = malloc( sizeof( buf2[ i ] ) );
+        strcpy( first_command[ i ], buf1[ i ] );
+        strcpy( second_command[ i ], buf2[ i ] );
+    }
 }
 
 
