@@ -20,7 +20,7 @@
 #define TRUE 1
 #define FALSE 0
 #define bufMax 512
-#define argMax 16
+#define argMax 32
 
 //Command line related variables
 static char cmd_buf[ bufMax ];
@@ -30,6 +30,8 @@ static char new_in = '\0';
 static int argc = ZERO;
 static int pos = ZERO;
 int buf_char = ZERO;
+static char** first_command;
+static char** second_command;
 
 //Quash process id's
 static pid_t q_pid;
@@ -104,17 +106,6 @@ void execArgs(){
     exit( 0 );
 }
 
-void printJobs(){
-    struct job* temp = curr_jobs;
-    if( temp == NULL ){
-    } else {
-        while( temp != NULL ){
-            printf( "[%d]    %d    %s\n", temp->id, temp->pid, temp->command);
-            temp = temp->next;
-        }
-    }
-}
-
 /**********************************************************************************/
 /**********************************************************************************/
 //Built-in command functions
@@ -175,6 +166,17 @@ void doCD(){
     } else {
         if( chdir( argv[ 1 ] ) == -1  ){
             printf( "%s: No such directory\n", argv[1]);
+        }
+    }
+}
+
+void printJobs(){
+    struct job* temp = curr_jobs;
+    if( temp == NULL ){
+    } else {
+        while( temp != NULL ){
+            printf( "[%d]    %d    %s\n", temp->id, temp->pid, temp->command);
+            temp = temp->next;
         }
     }
 }
@@ -276,7 +278,8 @@ int convertComments(){
 int isSymbolFound( char* checker ){
     pos = 0;
     for( int i = 0; i < argc ; i ++ ){
-        if( strcmp( checker, argv[ i ] ) == 0 ){
+        if( argv[ i ] == NULL ){
+        } else if( strcmp( checker, argv[ i ] ) == 0 ){
             argv[ i ] = NULL;
             return( 1 );
         }
@@ -284,6 +287,46 @@ int isSymbolFound( char* checker ){
     }
     return ( 0 );
 }
+
+void returnCommands( int givenPos ){
+    char* buf1[ argc ];
+    char* buf2[ argc ];
+    memset( &buf1[ 0 ], 0, argc );
+    memset( &buf2[ 0 ], 0, argc );
+    int count = 0;
+    int i = givenPos - 1;
+    int j = givenPos + 1;
+    while( argv[ i ] != NULL && argv[ i ] != "\0" &&
+           strcmp( "|", argv[ i ] ) != 0  &&
+           strcmp( ">", argv[ i ] ) != 0  &&
+           strcmp( "<", argv[ i ] ) != 0   
+                                          ){
+        i = i - 1;
+    }
+    i = i  + 1; 
+    while( argv[ i ] != NULL && argv[ i ] != "\0" &&
+           strcmp( "|", argv[ i ] ) != 0  &&
+           strcmp( ">", argv[ i ] ) != 0  &&
+           strcmp( "<", argv[ i ] ) != 0   
+                                          ){
+        buf1[ count ] = argv[ i ];
+        count = count + 1;
+        i = i + 1;
+    }
+    count = 0;
+    while( argv[ j ] != NULL && argv[ i ] != "\0" &&
+           strcmp( "|", argv[ j ] ) != 0  &&
+           strcmp( ">", argv[ j ] ) != 0  &&
+           strcmp( "<", argv[ j ] ) != 0   
+                                          ){
+        buf2[ count ] = argv[ j ];
+        count = count + 1;
+        j = j + 1;
+    }
+    first_command = buf1;
+    second_command = buf2;
+}
+
 
 //Parses through the built-in commands
 //and does the according command
@@ -296,10 +339,6 @@ int parse_builtIn(){
         exit( 0 );
     }
     if( strcmp( "#", argv [ 0 ] ) == 0 ){
-        return( 0 );
-    }
-    if( strcmp( "echo", argv[ 0 ] )  == 0 ){
-        doEcho();
         return( 0 );
     }
     if( strcmp( "pwd", argv[ 0 ] ) == 0 ){
@@ -320,6 +359,61 @@ int parse_builtIn(){
     }
     return( 1 );
 }
+/**********************************************************************************/
+/**********************************************************************************/
+//Pipes, redirects, etc.
+
+void doPipe( int pipePos ){
+    int size = argc;
+    char* buf1[ size ];
+    char* buf2[ size ];
+    memset( &buf1[ 0 ], 0, size );
+    memset( &buf2[ 0 ], 0, size );
+    for( int i = 0; i < argc; i ++ ){
+        if( i < pipePos - 1 ){
+            buf1[ i ] = argv[ i ];
+        } 
+        if( i > pipePos ){
+            buf2[ i ] = argv[ i ];
+        }
+    }
+    int fds[ 2 ];
+    pipe( fds );
+    int pid;
+    pid = fork();
+    if( pid == 0 ){
+        dup2( fds[ 1 ], STDIN_FILENO );
+        close( fds[ 0 ] ); close( fds[ 1 ] );
+        if( execvp( buf1[ 1 ], buf1 ) ){
+            perror( " " );
+        }
+        exit( 0 );
+    } else {
+        dup2( fds[ 0 ], STDIN_FILENO );
+        close( fds[ 0 ] ); close( fds[ 1 ] );
+        if( execvp( buf2[ 1 ], buf2 ) ){
+            perror( " " );
+        }
+    }
+}
+
+void doRedirectIn( int redirectPos ){
+    char* file_name = argv[ redirectPos + 1 ];
+    int fdin = open( file_name, O_RDONLY );
+    dup2( fdin, STDIN_FILENO );
+    close( fdin );
+}
+
+void doRedirectOut( int redirectPos ){
+    char* file_name = argv[ redirectPos + 1 ];
+    int fdout = open( file_name, O_CREAT | O_WRONLY | O_TRUNC, 0666 );
+    dup2( fdout, STDIN_FILENO );
+    if( parse_builtIn() ){
+        execArgs();
+    } 
+    close( fdout );
+}
+
 
 /**********************************************************************************/
 /**********************************************************************************/
@@ -327,10 +421,11 @@ int parse_builtIn(){
 
 //Simply creates the new job and sets its variables
 //It then goes to add it to curr_jobs listclear
-struct job* addJob( pid_t pid, char* name){
+struct job* addJob( pid_t pid, char* name, int job_type){
     struct job* newjob = malloc( sizeof( struct job ) );
     newjob->command = ( char* ) malloc( sizeof( name ) );
     newjob->command = strcpy( newjob->command, name );
+    newjob->ground = job_type;
     newjob->pid = pid;
     newjob->next = NULL;
     if( curr_jobs == NULL ){
@@ -396,7 +491,7 @@ void jobBack( struct job* given ){
 void jobHandler(){
     pid_t pid;
     int status;
-    pid = waitpid( pid, &status, WNOHANG | WUNTRACED );
+    pid = waitpid( WAIT_ANY, &status, WNOHANG | WUNTRACED );
     if ( pid > 0 ){
         struct job* temp = getJob( pid );
         if( temp == NULL ){
@@ -406,50 +501,75 @@ void jobHandler(){
             if( temp->ground == 1 ){
                 printf( "\nCompleted: [%d]    %d    %s\n", temp->id, temp->pid, temp->command );
             }
-            printf( "EXITED\n");
             curr_jobs = delJob( temp );
         }
         tcsetpgrp( q_term, q_pgid );
     }
 }
 
-void doJob(){
+void createChildProc( int given ){
+    char* temp = NULL;
     pid_t pid;
-    int job_type = 0;
-    job_type = isSymbolFound( "&" );
-    pid = fork();
-
-    if( pid == 0 ){
-        signal(SIGINT, SIG_DFL);
-        signal(SIGQUIT, SIG_DFL);
-        signal(SIGTSTP, SIG_DFL);
-
-        signal(SIGCHLD, &jobHandler);
-
-        signal(SIGTTIN, SIG_DFL);
-        setpgrp();
-        if( isSymbolFound( "|" ) ){
-            //Do piping
-            printf( "pipefound\n" );
-        }
-        if( isSymbolFound( "<" ) ){
-            //Do reading
-            printf( "readfound\n" );
-        }
-        if( isSymbolFound( ">" ) ){
-            //Do writing
-            printf( "writefound\n" );
-        }
-        printf( "\nin child\n" );
-        execArgs();
-        exit( 0 );
-    } else {
-        if( job_type == 0 ){
-            wait( NULL );
+    if( given == 0 ){
+        pid = fork();
+        if( pid == 0 ){
+            signal(SIGINT, SIG_DFL);
+            signal(SIGQUIT, SIG_DFL);
+            signal(SIGTSTP, SIG_DFL);
+            signal(SIGCHLD, &jobHandler);
+            signal(SIGTTIN, SIG_DFL);
+            setpgrp();
+            if( isSymbolFound( "|" ) ){
+                returnCommands( pos );
+                doPipe( pos );
+            }
+            if( isSymbolFound( "<" ) ){
+                doRedirectIn( pos );
+            }
+            if( isSymbolFound( ">" ) ){
+                doRedirectOut( pos );
+            }
+            //execArgs();
+            exit( 0 );  
         } else {
-            
+            wait( NULL );
+        }
+    } else {
+        pid = fork();
+        if( pid == 0 ){
+            signal(SIGINT, SIG_DFL);
+            signal(SIGQUIT, SIG_DFL);
+            signal(SIGTSTP, SIG_DFL);
+
+            signal(SIGCHLD, &jobHandler);
+
+            signal(SIGTTIN, SIG_DFL);
+            setpgrp();
+            if( isSymbolFound( "|" ) ){
+                doPipe( pos );
+            }
+            if( isSymbolFound( "<" ) ){
+                doRedirectIn( pos );
+            }
+            if( isSymbolFound( ">" ) ){
+                doRedirectOut( pos );
+            }
+            execArgs();
+            exit( 0 );  
+        } else {
+            setpgid(pid, pid );
+            curr_jobs = addJob( pid, *argv, 1 );
+            printf( "Background job started: [%d]    %d    %s\n", active_jobs, pid, *argv );
         }
     }
+}
+
+void doJob(){
+    int job_type = 0;
+    job_type = isSymbolFound( "&" );
+
+    createChildProc( job_type );
+    usleep(1000);
 }
 
 /**********************************************************************************/
