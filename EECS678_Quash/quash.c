@@ -533,7 +533,7 @@ void createChildProc( int given ){
             if( isSymbolFound( ">" ) ){
                 doRedirectOut( pos );
             }
-            //execArgs();
+            execArgs();
             exit( 0 );  
         } else {
             wait( NULL );
