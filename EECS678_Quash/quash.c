@@ -99,8 +99,8 @@ void readLine(){
     }
 }
 
-void execArgs(){
-    if( execvp( *argv, argv ) ){
+void execArgs( char* command[] ){
+    if( execvp( *command, command ) ){
         perror( " ERR\n" );
     }
     exit( 0 );
@@ -288,50 +288,6 @@ int isSymbolFound( char* checker ){
     return ( 0 );
 }
 
-void returnCommands( int givenPos ){
-    char* buf1[ argc ];
-    char* buf2[ argc ];
-    memset( &buf1[ 0 ], 0, argc );
-    memset( &buf2[ 0 ], 0, argc );
-    int count = 0;
-    int i = givenPos - 1;
-    int j = givenPos + 1;
-    while( argv[ i ] != NULL && argv[ i ] != "\0" &&
-           strcmp( "|", argv[ i ] ) != 0  &&
-           strcmp( ">", argv[ i ] ) != 0  &&
-           strcmp( "<", argv[ i ] ) != 0   
-                                          ){
-        i = i - 1;
-    }
-    i = i  + 1; 
-    while( argv[ i ] != NULL && argv[ i ] != "\0" &&
-           strcmp( "|", argv[ i ] ) != 0  &&
-           strcmp( ">", argv[ i ] ) != 0  &&
-           strcmp( "<", argv[ i ] ) != 0   
-                                          ){
-        buf1[ count ] = argv[ i ];
-        count = count + 1;
-        i = i + 1;
-    }
-    count = 0;
-    while( argv[ j ] != NULL && argv[ i ] != "\0" &&
-           strcmp( "|", argv[ j ] ) != 0  &&
-           strcmp( ">", argv[ j ] ) != 0  &&
-           strcmp( "<", argv[ j ] ) != 0   
-                                          ){
-        buf2[ count ] = argv[ j ];
-        count = count + 1;
-        j = j + 1;
-    }
-    for( int i = 0; i < argc; i ++ ){
-        first_command[ i ] = malloc( sizeof( buf1[ i ] ) );
-        second_command[ i ] = malloc( sizeof( buf2[ i ] ) );
-        strcpy( first_command[ i ], buf1[ i ] );
-        strcpy( second_command[ i ], buf2[ i ] );
-    }
-}
-
-
 //Parses through the built-in commands
 //and does the according command
 int parse_builtIn(){
@@ -409,12 +365,22 @@ void doRedirectIn( int redirectPos ){
 }
 
 void doRedirectOut( int redirectPos ){
+    int i = 0;
+    int marker = 0;
+    while( i != redirectPos ){
+        if( argv[ i ] == NULL || argv[ i ] == "\0" ){
+            marker = i;
+        }
+        int i = i + 1;
+    }
     char* file_name = argv[ redirectPos + 1 ];
     int fdout = open( file_name, O_CREAT | O_WRONLY | O_TRUNC, 0666 );
-    dup2( fdout, STDIN_FILENO );
-    if( parse_builtIn() ){
-        execArgs();
-    } 
+    if( fdout == -1 ){
+        return;
+    }
+    int temp = dup( STDOUT_FILENO );
+    int fdout2 = dup2( fdout, STDOUT_FILENO );
+    execArgs( argv );
     close( fdout );
 }
 
@@ -523,17 +489,16 @@ void createChildProc( int given ){
             signal(SIGCHLD, &jobHandler);
             signal(SIGTTIN, SIG_DFL);
             setpgrp();
-            if( isSymbolFound( "|" ) ){
-                returnCommands( pos );
+            while( isSymbolFound( "|" ) ){
                 doPipe( pos );
             }
-            if( isSymbolFound( "<" ) ){
+            while( isSymbolFound( "<" ) ){
                 doRedirectIn( pos );
             }
-            if( isSymbolFound( ">" ) ){
+            while( isSymbolFound( ">" ) ){
                 doRedirectOut( pos );
             }
-            execArgs();
+            execArgs( argv );
             exit( 0 );  
         } else {
             wait( NULL );
@@ -558,7 +523,7 @@ void createChildProc( int given ){
             if( isSymbolFound( ">" ) ){
                 doRedirectOut( pos );
             }
-            execArgs();
+            execArgs( argv );
             exit( 0 );  
         } else {
             setpgid(pid, pid );
