@@ -116,6 +116,13 @@ void doEcho(){
         if( strcmp( "#", argv[ i ] ) == 0 ){
             break;
         }
+        if( argv[ i ] == "BACKGROUNDJOB" ||
+            argv[ i ] == "PIPE"          ||
+            argv[ i ] == "REDIRECTRIGHT" ||
+            argv[ i ] == "REDIRECTLEFT"  ||
+            argv[ i ] == "TRUNCATE"      ){
+                break;
+            }
         if( argv[ i ][ 0 ] == '$' ){
             argv[ i ] = "\0";
         }
@@ -280,7 +287,21 @@ int isSymbolFound( char* checker ){
     for( int i = 0; i < argc ; i ++ ){
         if( argv[ i ] == NULL ){
         } else if( strcmp( checker, argv[ i ] ) == 0 ){
-            argv[ i ] = NULL;
+            if( checker == "&" ){
+                argv[ i ] = "BACKGROUNDJOB";
+            }
+            if( checker == "|" ){
+                argv[ i ] = "PIPE";
+            }
+            if( checker == ">" ){
+                argv[ i ] = "REDIRECTRIGHT";
+            }
+            if( checker == "<" ){
+                argv[ i ] = "REDIRECTLEFT";
+            }
+            if( checker == ">>" ){
+                argv[ i ] = "TRUNCATE";
+            }
             return( 1 );
         }
         pos = pos + 1;
@@ -324,54 +345,116 @@ int parse_builtIn(){
 //Pipes, redirects, etc.
 
 void doPipe( int pipePos ){
-    int size = argc;
-    char* buf1[ size ];
-    char* buf2[ size ];
-    memset( &buf1[ 0 ], 0, size );
-    memset( &buf2[ 0 ], 0, size );
-    for( int i = 0; i < argc; i ++ ){
-        if( i < pipePos - 1 ){
-            buf1[ i ] = argv[ i ];
-        } 
-        if( i > pipePos ){
-            buf2[ i ] = argv[ i ];
-        }
+    char *buf1[512];
+    char *buf2[512];
+    int marker = 0;
+
+    memset( &buf1[0], 0, 512);
+    memset( &buf2[0], 0, 512);
+    for( int i = 0; i < argc && i < pipePos; i ++ ){
+        if( argv[ i ] == "BACKGROUNDJOB" ||
+            argv[ i ] == "PIPE"          ||
+            argv[ i ] == "REDIRECTRIGHT" ||
+            argv[ i ] == "REDIRECTLEFT"  ||
+            argv[ i ] == "TRUNCATE"      ){
+                marker = i;
+            }
     }
-    int fds[ 2 ];
-    pipe( fds );
-    int pid;
-    pid = fork();
-    if( pid == 0 ){
-        dup2( fds[ 1 ], STDIN_FILENO );
-        close( fds[ 0 ] ); close( fds[ 1 ] );
-        if( execvp( buf1[ 1 ], buf1 ) ){
-            perror( " " );
-        }
-        exit( 0 );
-    } else {
-        dup2( fds[ 0 ], STDIN_FILENO );
-        close( fds[ 0 ] ); close( fds[ 1 ] );
-        if( execvp( buf2[ 1 ], buf2 ) ){
-            perror( " " );
-        }
+    int j = 0;
+    for( int i = marker; i < pipePos; i ++ ){
+        buf1[ j ] = argv[ i ];
+        j++;
     }
+    int i = pipePos + 1;
+    int k = 0;
+    int checker = 0;
+    while( checker == 0 ){
+        if( 
+            argv[ i ] == "BACKGROUNDJOB" ||
+            argv[ i ] == "PIPE"          ||
+            argv[ i ] == "REDIRECTRIGHT" ||
+            argv[ i ] == "REDIRECTLEFT"  ||
+            argv[ i ] == "TRUNCATE"      ||
+            argv[ i ] == NULL)
+        {
+            checker = 1;
+        }
+        buf2[ k ] = argv[i];
+        i++;
+        k++;
+        }
+
+    int fd[2];
+    pipe(fd);
+
+    int pid1 = fork();
+
+    if(pid1 == 0){
+        dup2(fd[1], STDOUT_FILENO);
+        close(fd[0]);
+        close(fd[1]);
+        execArgs(buf1);
+    }
+
+    int pid2 = fork();
+
+    if(pid2 == 0){
+        dup2(fd[0], STDIN_FILENO);
+        close(fd[1]);
+        close(fd[0]);
+        execArgs(buf2);
+    }
+
+    wait( NULL );
+    exit( 0 );
 }
 
 void doRedirectIn( int redirectPos ){
+   char* buf[512];
+    int marker = 0;
+    memset( &buf[0], 0, 512);
+    for( int i = 0; i < argc && i < redirectPos; i ++ ){
+        if( argv[ i ] == "BACKGROUNDJOB" ||
+            argv[ i ] == "PIPE"          ||
+            argv[ i ] == "REDIRECTRIGHT" ||
+            argv[ i ] == "REDIRECTLEFT"  ||
+            argv[ i ] == "TRUNCATE"      ){
+                marker = i;
+            }
+    }
+    int j = 0;
+    for( int i = marker; i < redirectPos; i ++ ){
+        buf[ j ] = argv[ i ];
+        j++;
+    }
     char* file_name = argv[ redirectPos + 1 ];
-    int fdin = open( file_name, O_RDONLY );
-    dup2( fdin, STDIN_FILENO );
-    close( fdin );
+    int fdout = open( file_name, O_RDONLY, 0 );
+    if( fdout == -1 ){
+        return;
+    }
+    int temp = dup( STDIN_FILENO );
+    int fdout2 = dup2( fdout, STDIN_FILENO );
+    execArgs( buf );
+    close( fdout );
 }
 
 void doRedirectOut( int redirectPos ){
-    int i = 0;
+    char* buf[512];
     int marker = 0;
-    while( i != redirectPos ){
-        if( argv[ i ] == NULL || argv[ i ] == "\0" ){
-            marker = i;
-        }
-        int i = i + 1;
+    memset( &buf[0], 0, 512);
+    for( int i = 0; i < argc && i < redirectPos; i ++ ){
+        if( argv[ i ] == "BACKGROUNDJOB" ||
+            argv[ i ] == "PIPE"          ||
+            argv[ i ] == "REDIRECTRIGHT" ||
+            argv[ i ] == "REDIRECTLEFT"  ||
+            argv[ i ] == "TRUNCATE"      ){
+                marker = i;
+            }
+    }
+    int j = 0;
+    for( int i = marker; i < redirectPos; i ++ ){
+        buf[ j ] = argv[ i ];
+        j++;
     }
     char* file_name = argv[ redirectPos + 1 ];
     int fdout = open( file_name, O_CREAT | O_WRONLY | O_TRUNC, 0666 );
@@ -380,10 +463,42 @@ void doRedirectOut( int redirectPos ){
     }
     int temp = dup( STDOUT_FILENO );
     int fdout2 = dup2( fdout, STDOUT_FILENO );
-    execArgs( argv );
+    execArgs( buf );
     close( fdout );
 }
 
+void doTruncate( int truncatePos ){
+    char* buf[512];
+    int marker = 0;
+    memset( &buf[0], 0, 512);
+    for( int i = 0; i < argc && i < truncatePos; i ++ ){
+        if( argv[ i ] == "BACKGROUNDJOB" ||
+            argv[ i ] == "PIPE"          ||
+            argv[ i ] == "REDIRECTRIGHT" ||
+            argv[ i ] == "REDIRECTLEFT"  ||
+            argv[ i ] == "TRUNCATE"      ){
+                marker = i;
+            }
+    }
+    int j = 0;
+    for( int i = marker; i < truncatePos; i ++ ){
+        buf[ j ] = argv[ i ];
+        j++;
+    }
+    
+    char* file_name = argv[ truncatePos + 1 ];
+    int fdout = open( file_name, O_WRONLY | O_APPEND, 0666 );
+    if( fdout == -1 ){
+        return;
+    }
+    int temp = dup( STDOUT_FILENO );
+    int fdout2 = dup2( fdout, STDOUT_FILENO );
+
+
+    execArgs( buf );
+    close( fdout );
+    exit( 0 );   
+}
 
 /**********************************************************************************/
 /**********************************************************************************/
@@ -469,7 +584,28 @@ void jobHandler(){
         }
         if( WIFEXITED( status ) ){
             if( temp->ground == 1 ){
-                printf( "\nCompleted: [%d]    %d    %s\n", temp->id, temp->pid, temp->command );
+                printf( "\nCompleted: [%d]    %d    ", temp->id, temp->pid);
+                for( int i = 0; i < argc; i ++ ){
+                    if( argv[ i ] == "BACKGROUNDJOB" ){
+                        printf( "& " );
+                    }
+                    else if( argv[ i ] == "PIPE" ){
+                        printf( "| " );
+                    }
+                    else if( argv[ i ] == "REDIRECTRIGHT" ){
+                        printf( "> ");
+                    }
+                    else if( argv[ i ] == "REDIRECTLEFT" ){
+                        printf( "< " );
+                    }
+                    else if( argv[ i ] == "TRUNCATE" ){
+                        printf( ">> " );
+                    }
+                    else {
+                        printf( "%s ", argv[ i ] );
+                    }
+                }
+                printf( "\n" );
             }
             curr_jobs = delJob( temp );
         }
@@ -489,17 +625,33 @@ void createChildProc( int given ){
             signal(SIGCHLD, &jobHandler);
             signal(SIGTTIN, SIG_DFL);
             setpgrp();
-            while( isSymbolFound( "|" ) ){
+            if( isSymbolFound( "|" ) ){
                 doPipe( pos );
             }
-            while( isSymbolFound( "<" ) ){
+            else if( isSymbolFound( "<" ) ){
                 doRedirectIn( pos );
             }
-            while( isSymbolFound( ">" ) ){
+            else if( isSymbolFound( ">" ) ){
                 doRedirectOut( pos );
             }
+            else if( isSymbolFound( ">>" ) ){
+                doTruncate( pos );
+            } else {
+                char* buf[512];
+                int marker = 0;
+                memset( &buf[0], 0, 512);
+                for( int i = 0; i < argc ; i ++ ){
+                    if( argv[ i ] == "BACKGROUNDJOB" ||
+                        argv[ i ] == "PIPE"          ||
+                        argv[ i ] == "REDIRECTRIGHT" ||
+                        argv[ i ] == "REDIRECTLEFT"  ||
+                        argv[ i ] == "TRUNCATE"      ){
+                            marker = i;
+                        }
+    }
             execArgs( argv );
-            exit( 0 );  
+            exit( 0 ); 
+            } 
         } else {
             wait( NULL );
         }
@@ -517,14 +669,18 @@ void createChildProc( int given ){
             if( isSymbolFound( "|" ) ){
                 doPipe( pos );
             }
-            if( isSymbolFound( "<" ) ){
+            else if( isSymbolFound( "<" ) ){
                 doRedirectIn( pos );
-            }
-            if( isSymbolFound( ">" ) ){
+            } 
+            else if( isSymbolFound( ">" ) ){
                 doRedirectOut( pos );
             }
+            else if( isSymbolFound( ">>" ) ){
+                doTruncate( pos );
+            } else {
             execArgs( argv );
-            exit( 0 );  
+            exit( 0 ); 
+            } 
         } else {
             setpgid(pid, pid );
             curr_jobs = addJob( pid, *argv, 1 );
