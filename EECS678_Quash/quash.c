@@ -1,4 +1,11 @@
-// TODO *Include authors, brief etc.
+// Quash Project
+// Bayley Duong
+// Preston Chanta
+
+/***********************************************************************************/
+//Notes:
+//Background doesn't work properly
+//Multiple redirects is not implemented
 
 /**********************************************************************************/
 /**********************************************************************************/
@@ -309,31 +316,6 @@ int isSymbolFound( char* checker ){
     return ( 0 );
 }
 
-int isSymbolFound2(){
-    for( int i = 0; i < argc ; i ++ ){
-        if( argv[ i ] == NULL ){
-        } else if( strcmp( checker, argv[ i ] ) == 0 ){
-            if( checker == "&" ){
-                return( 1 );
-            }
-            if( checker == "|" ){
-                return( 1 );
-            }
-            if( checker == ">" ){
-                return( 1 );
-            }
-            if( checker == "<" ){
-                return( 1 );
-            }
-            if( checker == ">>" ){
-                return( 1 );
-            }
-            return( 1 );
-        }
-    }
-    return ( 0 );
-}
-
 //Parses through the built-in commands
 //and does the according command
 int parse_builtIn(){
@@ -343,13 +325,6 @@ int parse_builtIn(){
     if( strcmp( "exit", argv[ 0 ] ) == 0 ||
         strcmp( "quit", argv[ 0 ] ) == 0 ){
         exit( 0 );
-    }
-    if( isSymbolFound2() ){
-        return( 1 );
-    }
-    if( strcmp( "echo", argv [ 0 ] ) == 0 ){
-        doEcho();
-        return( 0 );
     }
     if( strcmp( "#", argv [ 0 ] ) == 0 ){
         return( 0 );
@@ -670,22 +645,18 @@ void createChildProc( int given ){
                 doTruncate( pos );
             } else {
                 char* buf[512];
-                int checker = 0;
-                int i = 0;
-                memset( &buf[ 0 ], 0, 512 );
-                while( checker == 0 ){
+                int marker = 0;
+                memset( &buf[0], 0, 512);
+                for( int i = 0; i < argc ; i ++ ){
                     if( argv[ i ] == "BACKGROUNDJOB" ||
                         argv[ i ] == "PIPE"          ||
                         argv[ i ] == "REDIRECTRIGHT" ||
                         argv[ i ] == "REDIRECTLEFT"  ||
                         argv[ i ] == "TRUNCATE"      ){
-                            checker = 1;
-                        } else {
-                            buf[ i ] = argv[ i ];
+                            marker = i;
                         }
-                    i++;
-                }
-            execArgs( buf );
+    }
+            execArgs( argv );
             exit( 0 ); 
             } 
         } else {
@@ -714,23 +685,7 @@ void createChildProc( int given ){
             else if( isSymbolFound( ">>" ) ){
                 doTruncate( pos );
             } else {
-                char* buf[512];
-                int checker = 0;
-                int i = 0;
-                memset( &buf[ 0 ], 0, 512 );
-                while( checker == 0 ){
-                    if( argv[ i ] == "BACKGROUNDJOB" ||
-                        argv[ i ] == "PIPE"          ||
-                        argv[ i ] == "REDIRECTRIGHT" ||
-                        argv[ i ] == "REDIRECTLEFT"  ||
-                        argv[ i ] == "TRUNCATE"      ){
-                            checker = 1;
-                        } else {
-                            buf[ i ] = argv[ i ];
-                        }
-                    i++;
-                }
-            execArgs( buf );
+            execArgs( argv );
             exit( 0 ); 
             } 
         } else {
